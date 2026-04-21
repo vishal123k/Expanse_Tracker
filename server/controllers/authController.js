@@ -2,71 +2,84 @@ const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const generateToken = require("../utils/generateToken");
 
-//  REGISTER
+// REGISTER USER
 exports.registerUser = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    // Check if user exists
-    const userExists = await User.findOne({ email });
-    if (userExists) {
-      return res.status(400).json({ message: "Email already registered" });
+    // 1. Explicit Validation
+    if (!name || !email || !password) {
+      return res.status(400).json({ message: "Please provide all required fields." });
     }
 
-    // Hash password
+    // 2. Check if user exists
+    const userExists = await User.findOne({ email });
+    if (userExists) {
+      return res.status(400).json({ message: "Email is already registered." });
+    }
+
+    // 3. Hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-
+    // 4. Create User
     const user = new User({
       name,
       email,
       password: hashedPassword
     });
 
+    // 5. Generate and assign token for single-login control
     const token = generateToken(user._id);
-    user.token = token; // Add token before saving
+    user.token = token; 
 
     await user.save(); 
 
+    // 6. Send clean response (Notice we include the 'name' for the UI)
     res.status(201).json({
       _id: user._id,
+      name: user.name, 
       email: user.email,
       token
     });
 
   } catch (error) {
-    if (error.code === 11000) {
-      return res.status(400).json({ message: "Duplicate email" });
-    }
-    res.status(500).json({ message: error.message });
+    console.error("Registration Error:", error); // Log real error for developer
+    res.status(500).json({ message: "Server error during registration. Please try again." });
   }
 };
 
-// LOGIN
+// LOGIN USER
 exports.loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const user = await User.findOne({ email });
-
-    if (user && await bcrypt.compare(password, user.password)) {
-      const token = generateToken(user._id);
-
-      //  overwrite old token → single login only
-      user.token = token;
-      await user.save();
-
-      res.status(200).json({
-        _id: user._id,
-        email: user.email,
-        token
-      });
-
-    } else {
-      res.status(401).json({ message: "Invalid credentials" });
+    if (!email || !password) {
+      return res.status(400).json({ message: "Please provide email and password." });
     }
+
+    // CRITICAL: Because we used `select: false` in the model, we MUST use `.select('+password')` here
+    const user = await User.findOne({ email }).select("+password");
+
+    // Check user and password in one step for cleaner logic
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(401).json({ message: "Invalid email or password." });
+    }
+
+    // Overwrite old token -> enforces single active login
+    const token = generateToken(user._id);
+    user.token = token;
+    await user.save();
+
+    res.status(200).json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      token
+    });
+
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error("Login Error:", error);
+    res.status(500).json({ message: "Server error during login. Please try again." });
   }
 };

@@ -1,16 +1,34 @@
 const express = require("express");
-const router = express.Router();
-const protect = require("../middleware/authMiddleware");
 const {
   addTransaction,
   getTransactions,
-  deleteTransaction // Import the new controller function
+  deleteTransaction
 } = require("../controllers/transactionController");
+const protect = require("../middleware/authMiddleware");
 
-router.post("/", protect, addTransaction);
-router.get("/", protect, getTransactions);
+const router = express.Router();
 
-// Protect middleware lagaya aur logic controller mein bhej diya
-router.delete("/:id", protect, deleteTransaction); 
+// 🛡️ GLOBAL MIDDLEWARE FOR THIS ROUTER
+// Applies the 'protect' middleware to ALL routes below this line.
+// This is much cleaner than writing 'protect' on every single route!
+router.use(protect);
+
+/**
+ * @route   /api/transactions
+ * @desc    GET: Fetch logged-in user's transactions
+ * POST: Create a new transaction
+ * @access  Private
+ */
+router.route("/")
+  .get(getTransactions)
+  .post(addTransaction);
+
+/**
+ * @route   /api/transactions/:id
+ * @desc    DELETE: Remove a specific transaction
+ * @access  Private
+ */
+router.route("/:id")
+  .delete(deleteTransaction);
 
 module.exports = router;

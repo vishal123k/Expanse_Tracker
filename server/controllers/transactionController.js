@@ -1,50 +1,71 @@
 const Transaction = require("../models/Transaction");
 
-//ADD
+// ADD TRANSACTION
 exports.addTransaction = async (req, res) => {
   try {
-    // Basic validation check
-    if (Object.keys(req.body).length === 0) {
-      return res.status(400).json({ message: "Transaction data is missing" });
+    const { amount, type, category, date } = req.body;
+
+    // Explicit validation is safer than checking Object.keys length
+    if (!amount || !type || !category) {
+      return res.status(400).json({ message: "Amount, type, and category are required." });
     }
 
     const transaction = await Transaction.create({
-      ...req.body,
-      user: req.user._id
+      amount,
+      type,
+      category,
+      date: date || Date.now(),
+      user: req.user._id // Extracted from your authentication middleware
     });
 
     res.status(201).json(transaction);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error("Add Transaction Error:", error);
+    
+    // Check if it's a Mongoose validation error (e.g., negative amount)
+    if (error.name === "ValidationError") {
+       const messages = Object.values(error.errors).map(val => val.message);
+       return res.status(400).json({ message: messages.join(', ') });
+    }
+    
+    res.status(500).json({ message: "Server error while adding transaction." });
   }
 };
 
-// GET
+// GET TRANSACTIONS
 exports.getTransactions = async (req, res) => {
   try {
-    const data = await Transaction.find({ user: req.user._id });
-    res.status(200).json(data);
+    // Let the Database handle the sorting (-1 means descending/newest first)
+    const transactions = await Transaction.find({ user: req.user._id }).sort({ date: -1 });
+    
+    res.status(200).json(transactions);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error("Get Transactions Error:", error);
+    res.status(500).json({ message: "Server error while fetching transactions." });
   }
 };
 
+// DELETE TRANSACTION
 exports.deleteTransaction = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // 1. Pehle transaction find karein aur check karein ki wo logged-in user ki hi hai
-    const transaction = await Transaction.findOne({ _id: id, user: req.user._id });
+    // findOneAndDelete is an atomic operation: it finds and deletes in a single DB query
+    const transaction = await Transaction.findOneAndDelete({ 
+      _id: id, 
+      user: req.user._id 
+    });
 
     if (!transaction) {
-      return res.status(404).json({ message: "Transaction not found or unauthorized" });
+      return res.status(404).json({ message: "Transaction not found or unauthorized." });
     }
 
-    // 2. Agar mil jaye aur user same ho, tabhi delete karein
-    await transaction.deleteOne();
-
-    res.status(200).json({ message: "Transaction deleted successfully" });
+    res.status(200).json({ 
+      message: "Transaction deleted successfully",
+      deletedId: id 
+    });
   } catch (error) {
-    res.status(500).json({ message: "Error deleting transaction" });
+    console.error("Delete Transaction Error:", error);
+    res.status(500).json({ message: "Server error while deleting transaction." });
   }
 };
